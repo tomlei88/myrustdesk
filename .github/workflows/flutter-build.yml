@@ -1,10 +1,23 @@
 name: Build the flutter version of the RustDesk
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - master
+  workflow_dispatch:  # 核心修改：增加手动运行按钮
+  workflow_call:
+    inputs:
+      upload-artifact:
+        type: boolean
+        default: true
+      upload-tag:
+        type: string
+        default: "nightly"
+
+env:
+  SCITER_RUST_VERSION: "1.75"
+  RUST_VERSION: "1.75"
+  MAC_RUST_VERSION: "1.81"
+  CARGO_NDK_VERSION: "3.1.2"
+  SCITER_ARMV7_CMAKE_VERSION: "3.29.7"
+  SCITER_NASM_DEBVERSION: "2.16.01-1"
 
 jobs:
   build:
@@ -14,11 +27,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-20.04
             target: linux
-          - os: windows-latest
+          - os: windows-2022
             target: windows
-          - os: macos-latest
+          - os: macos-13
             target: macos
 
     steps:
@@ -27,51 +40,53 @@ jobs:
         with:
           submodules: recursive
 
+      # 核心修改：在编译前强行注入你的服务器 ID 和 KEY
       - name: Customize Server ID and Key
         shell: bash
         run: |
-          FILE_PATH="libs/hbb_common/src/config.rs"
-          if [ -f "$FILE_PATH" ]; then
-            sed -i 's/const RENDEZVOUS_SERVER: \&str = "";/const RENDEZVOUS_SERVER: \&str = "yc.7itv.com";/g' "$FILE_PATH"
-            sed -i 's/const DEFAULT_KEY: \&str = "";/const DEFAULT_KEY: \&str = "rTcQJ3osDHnvWKcWnog2L5MoT30PetbcrfIcP1mpf5s=";/g' "$FILE_PATH"
-            echo "Config patched."
+          CONFIG_FILE="libs/hbb_common/src/config.rs"
+          if [ -f "$CONFIG_FILE" ]; then
+            sed -i 's/const RENDEZVOUS_SERVER: \&str = "";/const RENDEZVOUS_SERVER: \&str = "yc.7itv.com";/g' "$CONFIG_FILE"
+            sed -i 's/const DEFAULT_KEY: \&str = "";/const DEFAULT_KEY: \&str = "rTcQJ3osDHnvWKcWnog2L5MoT30PetbcrfIcP1mpf5s=";/g' "$CONFIG_FILE"
+            echo "Successfully patched server config."
+          else
+            echo "Error: Config file not found!"
+            exit 1
           fi
 
       - name: Install dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-20.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libpulse-dev libdbus-1-dev libgtk-3-dev libxdotool-dev libxcb-shm0-dev libxcb-randr0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-xinerama0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-xtest0-dev libx11-dev
+          sudo apt-get install -y --no-install-recommends libasound2-dev libpulse-dev libdbus-1-dev libgtk-3-dev libcpufreq-dev libva-dev libvdpau-dev libxdotool-dev libxcb-shm0-dev libxcb-randr0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-xinerama0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-xtest0-dev libx11-dev
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.os == 'macos-13' && env.MAC_RUST_VERSION || env.RUST_VERSION }}
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.19.6' # 锁定此版本，兼顾 xterm 需求和旧代码兼容性
+          # 修改为 3.19.6 以解决你之前遇到的 xterm 插件版本冲突
+          flutter-version: '3.19.6'
 
-      - name: Install Bridge Tool
+      - name: Build RustDesk (Flutter)
         run: |
-          cargo install flutter_rust_bridge_codegen --version 1.80.1
-
-      - name: Build RustDesk
-        shell: bash
-        run: |
-          # 生成桥接代码 (修复 generated_bridge.dart 缺失问题)
-          ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input libs/bridge/src/api.rs --dart-output flutter/lib/generated_bridge.dart || true
-          
           cd flutter
           flutter pub get
-          
-          # 尝试修复代码中的类型冲突 (针对 3.19+ 的兼容性处理)
-          sed -i 's/DialogTheme/DialogThemeData/g' lib/common.dart || true
-          sed -i 's/TabBarTheme/TabBarThemeData/g' lib/common.dart || true
-          
-          flutter build ${{ matrix.target }} --release
+          if [ "${{ matrix.target }}" == "windows" ]; then
+            flutter build windows --release
+          elif [ "${{ matrix.target }}" == "macos" ]; then
+            flutter build macos --release
+          else
+            flutter build linux --release
+          fi
 
+      # 官方产物上传逻辑
       - name: Upload Artifacts
+        if: github.event_name == 'workflow_dispatch' || inputs.upload-artifact == true
         uses: actions/upload-artifact@v4
         with:
           name: rustdesk-${{ matrix.target }}
