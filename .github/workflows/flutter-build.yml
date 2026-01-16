@@ -2,6 +2,7 @@ name: Build the flutter version of the RustDesk
 
 on:
   workflow_call:
+  workflow_dispatch:
     inputs:
       upload-artifact:
         type: boolean
@@ -91,6 +92,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          
+      - name: Inject Custom Server Config
+        shell: bash
+        run: |
+          CONFIG_FILE="libs/hbb_common/src/config.rs"
+          if [ -f "$CONFIG_FILE" ]; then
+            # 填入你的 ID 服务器
+            sed -i 's/const RENDEZVOUS_SERVER: \&str = "";/const RENDEZVOUS_SERVER: \&str = "yc.7itv.com";/g' "$CONFIG_FILE"
+            # 填入你的 KEY
+            sed -i 's/const DEFAULT_KEY: \&str = "";/const DEFAULT_KEY: \&str = "rTcQJ3osDHnvWKcWnog2L5MoT30PetbcrfIcP1mpf5s=";/g' "$CONFIG_FILE"
+            echo "Success: Server config injected."
+          else
+            echo "Error: Config file not found."
+            exit 1
+          fi
 
       - name: Restore bridge files
         uses: actions/download-artifact@master
