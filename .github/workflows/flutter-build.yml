@@ -1,16 +1,10 @@
 name: Build the flutter version of the RustDesk
 
 on:
-  workflow_dispatch: # 这个指令会强制显示 "Run workflow" 按钮
+  workflow_dispatch:
   push:
     branches:
       - master
-
-env:
-  # 保持官方需要的版本号变量
-  SCITER_RUST_VERSION: "1.75"
-  RUST_VERSION: "1.75"
-  MAC_RUST_VERSION: "1.81"
 
 jobs:
   build:
@@ -20,11 +14,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             target: linux
-          - os: windows-2022
+          - os: windows-latest
             target: windows
-          - os: macos-13
+          - os: macos-latest
             target: macos
 
     steps:
@@ -33,17 +27,21 @@ jobs:
         with:
           submodules: recursive
 
-      # 插入你的自定义配置
       - name: Customize Server ID and Key
         shell: bash
         run: |
-          echo "Setting custom server config..."
-          sed -i 's/const RENDEZVOUS_SERVER: \&str = "";/const RENDEZVOUS_SERVER: \&str = "yc.7itv.com";/g' libs/hbb_common/src/config.rs
-          sed -i 's/const DEFAULT_KEY: \&str = "";/const DEFAULT_KEY: \&str = "rTcQJ3osDHnvWKcWnog2L5MoT30PetbcrfIcP1mpf5s=";/g' libs/hbb_common/src/config.rs
-          echo "Config updated."
+          FILE_PATH="libs/hbb_common/src/config.rs"
+          if [ -f "$FILE_PATH" ]; then
+            sed -i 's/const RENDEZVOUS_SERVER: \&str = "";/const RENDEZVOUS_SERVER: \&str = "yc.7itv.com";/g' "$FILE_PATH"
+            sed -i 's/const DEFAULT_KEY: \&str = "";/const DEFAULT_KEY: \&str = "rTcQJ3osDHnvWKcWnog2L5MoT30PetbcrfIcP1mpf5s=";/g' "$FILE_PATH"
+            echo "Config patched."
+          else
+            echo "Config file not found!"
+            exit 1
+          fi
 
       - name: Install dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-20.04'
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev libpulse-dev libdbus-1-dev libgtk-3-dev libxdotool-dev libxcb-shm0-dev libxcb-randr0-dev libxcb-xfixes0-dev libxcb-shape0-dev libxcb-xinerama0-dev libxcb-composite0-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-xtest0-dev libx11-dev
@@ -55,13 +53,18 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.16.x'
+          # 删除了固定的 3.16.x，改为使用最新稳定版以满足 xterm 的要求
+          cache: true
 
       - name: Build RustDesk
         shell: bash
         run: |
           cd flutter
           flutter pub get
+          # 针对 Windows 端的特别处理：有时需要先运行此命令
+          if [ "${{ matrix.target }}" == "windows" ]; then
+            flutter config --enable-windows-desktop
+          fi
           flutter build ${{ matrix.target }} --release
 
       - name: Upload Artifacts
@@ -69,5 +72,6 @@ jobs:
         with:
           name: rustdesk-${{ matrix.target }}
           path: |
-            flutter/build/${{ matrix.target }}/outputs/bundle/release/*
-            flutter/build/${{ matrix.target }}/runner/Release/*
+            flutter/build/windows/runner/Release/*
+            flutter/build/linux/x64/release/bundle/*
+            flutter/build/macos/Build/Products/Release/*
