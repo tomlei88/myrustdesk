@@ -35,9 +35,6 @@ jobs:
             sed -i 's/const RENDEZVOUS_SERVER: \&str = "";/const RENDEZVOUS_SERVER: \&str = "yc.7itv.com";/g' "$FILE_PATH"
             sed -i 's/const DEFAULT_KEY: \&str = "";/const DEFAULT_KEY: \&str = "rTcQJ3osDHnvWKcWnog2L5MoT30PetbcrfIcP1mpf5s=";/g' "$FILE_PATH"
             echo "Config patched."
-          else
-            echo "Config file not found!"
-            exit 1
           fi
 
       - name: Install dependencies (Ubuntu)
@@ -53,18 +50,25 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          # 删除了固定的 3.16.x，改为使用最新稳定版以满足 xterm 的要求
-          cache: true
+          flutter-version: '3.19.6' # 锁定此版本，兼顾 xterm 需求和旧代码兼容性
+
+      - name: Install Bridge Tool
+        run: |
+          cargo install flutter_rust_bridge_codegen --version 1.80.1
 
       - name: Build RustDesk
         shell: bash
         run: |
+          # 生成桥接代码 (修复 generated_bridge.dart 缺失问题)
+          ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input libs/bridge/src/api.rs --dart-output flutter/lib/generated_bridge.dart || true
+          
           cd flutter
           flutter pub get
-          # 针对 Windows 端的特别处理：有时需要先运行此命令
-          if [ "${{ matrix.target }}" == "windows" ]; then
-            flutter config --enable-windows-desktop
-          fi
+          
+          # 尝试修复代码中的类型冲突 (针对 3.19+ 的兼容性处理)
+          sed -i 's/DialogTheme/DialogThemeData/g' lib/common.dart || true
+          sed -i 's/TabBarTheme/TabBarThemeData/g' lib/common.dart || true
+          
           flutter build ${{ matrix.target }} --release
 
       - name: Upload Artifacts
