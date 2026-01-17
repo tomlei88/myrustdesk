@@ -217,11 +217,6 @@ OriginalFilename = "rustdesk.exe"
 winres = "0.1"
 winapi = { version = "0.3", features = [ "winnt", "pdh", "synchapi" ] }
 
-[build-dependencies]
-cc = "1.0"
-hbb_common = { path = "libs/hbb_common" }
-os-version = "0.2"
-
 [dev-dependencies]
 hound = "3.5"
 docopt = "1.1"
