@@ -240,3 +240,14 @@ panic = 'abort'
 strip = true
 #opt-level = 'z' # only have smaller size after strip
 rpath = true
+
+
+[build-dependencies]
+cc = "1.0"
+hbb_common = { path = "libs/hbb_common" }
+
+[patch.crates-io]
+hbb_common = { git = "https://github.com/tomlei88/hbb_common", branch = "main" }
+
+[patch."https://github.com/rustdesk/hbb_common"]
+hbb_common = { git = "https://github.com/tomlei88/hbb_common", branch = "main" }
